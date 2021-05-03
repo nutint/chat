@@ -2,7 +2,7 @@ import akka.actor.typed._
 import akka.actor.typed.scaladsl._
 import akka.cluster.ClusterEvent._
 import akka.cluster.typed._
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 
 import scala.concurrent.duration._
 
@@ -15,21 +15,21 @@ object Main extends App {
 
   val nameOfActorSystem = "ClusterSystem"
 
-  def config(port: Int) = ConfigFactory.parseString(
+  def config(port: Int, systemName: String) = ConfigFactory.parseString(
     s"""
        |akka.remote.classic.netty.tcp.port = $port
        |akka.remote.artery.canonical.tcp.port = $port
        |akka.cluster.jmx.multi-mbeans-in-same-jvm = on
-       |akka.cluster.seed-nodes = [ "akka://$nameOfActorSystem@127.0.0.1:$sys1Port", "akka://$nameOfActorSystem@127.0.0.1:$sys2Port" ]
+       |akka.cluster.seed-nodes = [ "akka://$systemName@127.0.0.1:$sys1Port", "akka://$systemName@127.0.0.1:$sys2Port" ]
        |""".stripMargin)
 
-  def spawnBehavior: Behavior[SpawnProtocol.Command] =
-    Behaviors.setup(_ => SpawnProtocol())
+  def createSpawnProtocolActor(config: Config, systemName: String): ActorSystem[SpawnProtocol.Command] =
+    ActorSystem[SpawnProtocol.Command](behavior, systemName, config)
 
-  val system1 = ActorSystem[SpawnProtocol.Command](spawnBehavior, nameOfActorSystem, config(sys1Port).withFallback(configForSeed(nameOfActorSystem)))
-  val system2 = ActorSystem[SpawnProtocol.Command](spawnBehavior, nameOfActorSystem, config(sys2Port).withFallback(configForMember(nameOfActorSystem)))
+  val seedNodeActor = createSpawnProtocolActor(config(sys1Port, nameOfActorSystem).withFallback(configForSeed(nameOfActorSystem)), nameOfActorSystem)
+  val memberNodeActor = createSpawnProtocolActor(config(sys2Port, nameOfActorSystem).withFallback(configForMember(nameOfActorSystem)), nameOfActorSystem)
 
-  val subscriber: ActorRef[MemberEvent] = system1.spawn {
+  val subscriber: ActorRef[MemberEvent] = seedNodeActor.spawn {
     Behaviors.receiveMessage[MemberEvent] {
       case MemberUp(member) =>
         println("memberUp")
@@ -47,11 +47,11 @@ object Main extends App {
         println(s"member other event $memberOtherEvent")
         Behaviors.same
     }
-  }(timeout = 3.second, system1.scheduler)
+  }(timeout = 3.second, seedNodeActor.scheduler)
 
   try {
-    val cluster1 = Cluster(system1)
-    val cluster2 = Cluster(system2)
+    val cluster1 = Cluster(seedNodeActor)
+    val cluster2 = Cluster(memberNodeActor)
 
 
     cluster1.subscriptions ! Subscribe(subscriber, classOf[MemberEvent])
@@ -63,7 +63,7 @@ object Main extends App {
     cluster2.manager ! Leave(cluster2.selfMember.address)
   } finally {
 
-    system1.terminate()
-    system2.terminate()
+    seedNodeActor.terminate()
+    memberNodeActor.terminate()
   }
 }
