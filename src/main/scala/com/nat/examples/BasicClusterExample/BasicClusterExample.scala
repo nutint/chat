@@ -3,37 +3,41 @@ package com.nat.examples.BasicClusterExample
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorSystem, Behavior}
 import akka.cluster.typed.Cluster
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 
 object BasicClusterExample {
-  val configSystem1 = ConfigFactory.parseString(
-    s"""
-  akka {
-    actor {
-      provider = "cluster"
-    }
-    remote.artery {
-      canonical {
-        hostname = "127.0.0.1"
-        port = 2551
-      }
-    }
-    cluster {
-      seed-nodes = [
-        "akka://ClusterSystem@127.0.0.1:2551",
-        "akka://ClusterSystem@127.0.0.1:2552"
-      ]
-
-      downing-provider-class = "akka.cluster.sbr.SplitBrainResolverProvider"
-    }
+  def configForSeed(systemName: String): Config = {
+    ConfigFactory.parseString(
+      s"""
+         |akka {
+         |  actor {
+         |    provider = "cluster"
+         |  }
+         |  remote.artery {
+         |    canonical {
+         |      hostname = "127.0.0.1"
+         |      port = 2551
+         |    }
+         |  }
+         |  cluster {
+         |    seed-nodes = [
+         |      "akka://$systemName@127.0.0.1:2551",
+         |      "akka://$systemName@127.0.0.1:2552"
+         |    ]
+         |
+         |    downing-provider-class = "akka.cluster.sbr.SplitBrainResolverProvider"
+         |  }
+         |}
+         |""".stripMargin)
   }
-  """)
 
-  val configSystem2 = ConfigFactory.parseString(
-    s"""
-       |akka.remote.classic.netty.tcp.port = 0
-       |akka.remote.artery.canonical.port = 0
-       |""".stripMargin).withFallback(configSystem1)
+  def configForMember(systemName: String): Config = {
+    ConfigFactory.parseString(
+      s"""
+         |akka.remote.classic.netty.tcp.port = 0
+         |akka.remote.artery.canonical.port = 0
+         |""".stripMargin).withFallback(configForSeed(systemName))
+  }
 
   def illustrateJoinSeedNodes(): Unit = {
     val system: ActorSystem[_] = ???

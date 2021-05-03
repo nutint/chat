@@ -6,9 +6,6 @@ import com.typesafe.config.ConfigFactory
 
 import scala.concurrent.duration._
 
-
-
-
 object Main extends App {
   import com.nat.examples.BasicClusterExample.BasicClusterExample._
   import com.nat.helpers.RootActorHelper._
@@ -29,8 +26,8 @@ object Main extends App {
   def spawnBehavior: Behavior[SpawnProtocol.Command] =
     Behaviors.setup(_ => SpawnProtocol())
 
-  val system1 = ActorSystem[SpawnProtocol.Command](spawnBehavior, nameOfActorSystem, config(sys1Port).withFallback(configSystem1))
-  val system2 = ActorSystem[SpawnProtocol.Command](spawnBehavior, nameOfActorSystem, config(sys2Port).withFallback(configSystem2))
+  val system1 = ActorSystem[SpawnProtocol.Command](spawnBehavior, nameOfActorSystem, config(sys1Port).withFallback(configForSeed(nameOfActorSystem)))
+  val system2 = ActorSystem[SpawnProtocol.Command](spawnBehavior, nameOfActorSystem, config(sys2Port).withFallback(configForMember(nameOfActorSystem)))
 
   val subscriber: ActorRef[MemberEvent] = system1.spawn {
     Behaviors.receiveMessage[MemberEvent] {
